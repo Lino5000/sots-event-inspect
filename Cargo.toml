@@ -1,0 +1,13 @@
+[package]
+name = "deck-dumper"
+version = "0.1.0"
+edition = "2021"
+about = "A tool to extract NPC decks from the unpacked assets of Signs of the Sojourner"
+author = "Lino5000"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "1.0"
+serde_yaml = "0.9"
+clap = { version = "4.1.4", features = ["derive"] }
