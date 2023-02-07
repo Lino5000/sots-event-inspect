@@ -1,4 +1,5 @@
-use inquire::{CustomType, Select, InquireError};
+use inquire::{Select, InquireError};
+use strum::{ IntoEnumIterator, EnumIter };
 
 use crate::{
     data::Event,
@@ -61,7 +62,7 @@ fn parse_event_data(mut folder_path: PathBuf) -> Result<BTreeMap<String, Event>,
        .collect())
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, EnumIter)]
 enum Command {
     ViewEvent,
     Quit,
@@ -125,7 +126,7 @@ impl App {
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         while self.is_running() {
-            let cmd: Command = CustomType::new("")
+            let cmd: Command = Select::new("", Command::iter().collect())
                 .prompt()?;
             self.run_command(cmd)?;
         }

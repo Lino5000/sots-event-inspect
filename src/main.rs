@@ -12,7 +12,7 @@ use interface::*;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
-    /// File Path to extract from
+    /// Path to the folder containing all the `.asset` files
     path: PathBuf,
 }
 

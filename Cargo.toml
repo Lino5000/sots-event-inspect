@@ -12,3 +12,4 @@ serde = "1.0"
 serde_yaml = "0.9"
 clap = { version = "4.1.4", features = ["derive"] }
 inquire = "0.5.3"
+strum = { version = "0.21.0", features = ["derive"] }
