@@ -11,3 +11,4 @@ author = "Lino5000"
 serde = "1.0"
 serde_yaml = "0.9"
 clap = { version = "4.1.4", features = ["derive"] }
+inquire = "0.5.3"
