@@ -183,7 +183,7 @@ impl_tryfrom_field!{Struct for Card:
 
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Event {
+pub struct RawEvent {
     pub id: String,
     pub npc_guid: String,
     pub sequence_count: u8,
@@ -192,19 +192,19 @@ pub struct Event {
     pub deck: Option<Deck>
 }
 
-impl PartialOrd for Event {
+impl PartialOrd for RawEvent {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for Event {
+impl Ord for RawEvent {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.id.cmp(&other.id)
     }
 }
 
-impl_tryfrom_field!{Struct for Event:
+impl_tryfrom_field!{Struct for RawEvent:
     |event| {
         field_get!(let id: Str = event.id);
         field_get!(let sequence: Str = event.sequence);
@@ -242,7 +242,7 @@ impl_tryfrom_field!{Struct for Event:
     }
 }
 
-fn write_vec_sep<T: Display>(v: &Vec<T>, sep: &str, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+pub fn write_vec_sep<T: Display>(v: &Vec<T>, sep: &str, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let mut iter = v.iter();
     while let Some(el) = iter.next() {
         write!(f, "{}", el)?;
@@ -253,7 +253,7 @@ fn write_vec_sep<T: Display>(v: &Vec<T>, sep: &str, f: &mut std::fmt::Formatter<
     Ok(())
 }
 
-impl Display for Event {
+impl Display for RawEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}:", self.id)?;
         writeln!(f, "\tnpc_guid: {}", self.npc_guid)?;

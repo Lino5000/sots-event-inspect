@@ -4,7 +4,7 @@ use walkdir::WalkDir;
 use bimap::BiBTreeMap;
 
 use crate::{
-    data::{Event, NPC},
+    data::{ RawEvent, NPC, write_vec_sep },
     yaml::{ constrain_field_get_body, Field, YamlError },
     field_get, field_get_body, field_value_type, Args, 
 };
@@ -15,7 +15,6 @@ use std::{
     fmt::Display, 
     fs::File,
     path::PathBuf, 
-    rc::Rc,
     str::FromStr, 
 };
 
@@ -142,6 +141,29 @@ impl FromStr for NPCSubCommand {
 }
 
 #[derive(Debug)]
+struct Event {
+    npc_id: String,
+    event: RawEvent,
+}
+
+impl Display for Event {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}:", self.event.id)?;
+        writeln!(f, "\tNPC: {}", self.npc_id)?;
+        writeln!(f, "\tNum Concord: {}", self.event.sequence_count)?;
+        writeln!(f, "\tNum Discord: {}", self.event.strike_count)?;
+        write!(f, "\tSequence Lengths: ")?;
+        write_vec_sep(&self.event.sequence_lengths, ", ", f)?;
+        if let Some(deck) = &self.event.deck {
+            writeln!(f, "\n\tOverrides NPC deck with:")?;
+            writeln!(f, "{}", deck)
+        } else {
+            writeln!(f, "\n\tUses default deck for this cycle; see NPC data.")
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct App {
     event_map: BTreeMap<String, Event>,
     npc_map: BTreeMap<String, NPC>,
@@ -221,8 +243,17 @@ impl App {
 
 
         self.event_map = events.iter()
-            .map(|field| Event::try_from(field))
-            .map(|r| r.map(|e| (e.id.clone(), e)))
+            .map(|field| {
+                let raw = RawEvent::try_from(field)?;
+                if let Some(npc_id) = self.npc_guids.get_by_left(&raw.npc_guid) {
+                    Ok((raw.id.clone(), Event {
+                        npc_id: npc_id.clone(),
+                        event: raw
+                    }))
+                } else {
+                    Err(format!("Unknown NPC Guid `{}` in event `{}`", raw.npc_guid, raw.id).into())
+                }
+            })
             .collect::<Result<_, YamlError>>()?;
 
         Ok(())
