@@ -213,3 +213,21 @@ pub fn constrain_field_get_body<F, R>(f: F) -> F
     f
 }
 
+#[macro_export]
+macro_rules! impl_tryfrom_field {
+    {$ftype:tt for $t:ty: |$value:ident| $body:block } => {
+        impl TryFrom<&field_value_type!($ftype)> for $t {
+            type Error = YamlError;
+
+            fn try_from($value: &field_value_type!($ftype)) -> Result<Self, Self::Error> $body
+        }
+        impl TryFrom<&Field> for $t {
+            type Error = YamlError;
+
+            fn try_from(value: &Field) -> Result<Self, Self::Error> {
+                let Field::$ftype(inner) = value else { return Err(format!("Not a {} field", stringify!($ftype)).into()); };
+                inner.try_into()
+            }
+        }
+    };
+}

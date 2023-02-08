@@ -10,7 +10,7 @@ use crate::{
         YamlError,
         constrain_field_get_body
     },
-    field_get, field_get_body, field_value_type
+    field_get, field_get_body, field_value_type, impl_tryfrom_field
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -27,11 +27,8 @@ pub enum Effect {
     Listen,
 }
 
-impl TryFrom<&Field> for Effect {
-    type Error = YamlError;
-
-    fn try_from(value: &Field) -> Result<Self, Self::Error> {
-        let Field::Uint(id) = value else { return Err("Field is not a Uint".into()); };
+impl_tryfrom_field!{Uint for Effect:
+    |id| {
         Ok(match id {
             1_u64 => Effect::Chain,
             2_u64 => Effect::Inherit,
@@ -114,13 +111,9 @@ impl Display for Connector {
     }
 }
 
-impl TryFrom<&Field> for Connector {
-    type Error = YamlError;
-
-    fn try_from(value: &Field) -> Result<Self, Self::Error> {
+impl_tryfrom_field!{Uint for Connector:
+    |connect| {
         let mut set = BTreeSet::new();
-        
-        let Field::Uint(connect) = value else { return Err("Connector is not a Uint field".into()); };
 
         if (connect & 0x1) > 0 {
             set.insert(ConnectType::Circle);
@@ -158,29 +151,25 @@ impl Display for Card {
     }
 }
 
-impl TryFrom<&Field> for Card {
-    type Error = YamlError;
-
-    fn try_from(value: &Field) -> Result<Self, Self::Error> {
-        let Field::Struct(card_field) = value else { return Err("Not a Struct field".into()); };
-        
+impl_tryfrom_field!{Struct for Card:
+    |value| {
         Ok(Self {
             input: Connector::try_from(
-                       if let Some(input) = card_field.get("input") {
+                       if let Some(input) = value.get("input") {
                            input
                        } else {
                            return Err("No `input` field in card".into());
                        }
                     )?,
             output: Connector::try_from(
-                       if let Some(output) = card_field.get("output") {
+                       if let Some(output) = value.get("output") {
                            output
                        } else {
                            return Err("No `output` field in card".into());
                        }
                     )?,
             effect: Effect::try_from(
-                        if let Some(effect) = card_field.get("effect") {
+                        if let Some(effect) = value.get("effect") {
                             effect
                         } else {
                             return Err("No `effect` field in card".into());
@@ -198,7 +187,7 @@ pub struct Event {
     pub sequence_count: u8,
     pub strike_count: u8,
     pub sequence_lengths: Vec<u8>,
-    pub deck: Option<Vec<Card>>
+    pub deck: Option<Deck>
 }
 
 impl PartialOrd for Event {
@@ -213,11 +202,8 @@ impl Ord for Event {
     }
 }
 
-impl TryFrom<&Field> for Event {
-    type Error = YamlError;
-
-    fn try_from(value: &Field) -> Result<Self, Self::Error> {
-        let Field::Struct(event) = value else { return Err("Field is not a Struct".into()); };
+impl_tryfrom_field!{Struct for Event:
+    |event| {
         field_get!(let id: Str = event.id);
         field_get!(let sequence: Str = event.sequence);
         field_get!(event id, let seq_count: Uint = event.sequenceCount);
@@ -246,14 +232,7 @@ impl TryFrom<&Field> for Event {
             sequence_lengths,
             deck: if *override_deck == 1u64 {
                 field_get!(event id, let event_deck: Struct = event.deck);
-                field_get!(event id, let cards: List = event_deck.cards);
-
-                let mut deck = Vec::new();
-                for card in cards {
-                    deck.push(card.try_into()?);
-                }
-
-                Some(deck)
+                Some(event_deck.try_into()?)
             } else {
                 None
             }
@@ -280,12 +259,38 @@ impl Display for Event {
         writeln!(f, "\tstrike_count: {}", self.strike_count)?;
         write!(f, "\tsequence_lengths: ")?;
         write_vec_sep(&self.sequence_lengths, ", ", f)?;
-        write!(f, "\n\tdeck:\n\t\t")?;
+        writeln!(f, "\n\tdeck:")?;
         if let Some(deck) = &self.deck {
-            write_vec_sep(&deck, "\n\t\t", f)?;
+            write!(f, "\t\tanchor: {}\n\t\t", deck.anchor)?;
+            write_vec_sep(&deck.cards, "\n\t\t", f)?;
             writeln!(f, "")
         } else {
             writeln!(f, "Default for cycle; see character with npc guid `{}`", self.npc_guid)
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Deck {
+    pub anchor: Card,
+    pub cards: Vec<Card>
+}
+
+impl_tryfrom_field!{Struct for Deck:
+    |value| {
+        field_get!(let cards: List = value.cards);
+        let mut deck = Vec::new();
+        for card in cards {
+            deck.push(card.try_into()?);
+        }
+
+        Ok(Self {
+            anchor: if let Some(anchor) = value.get("anchor") {
+                anchor.try_into()?
+            } else {
+                return Err("No `anchor` field for Deck.".into());
+            },
+            cards: deck,
+        })
     }
 }
