@@ -14,3 +14,4 @@ clap = { version = "4.1.4", features = ["derive"] }
 inquire = "0.5.3"
 strum = { version = "0.21.0", features = ["derive"] }
 walkdir = "2.3.2"
+bimap = "0.6.2"

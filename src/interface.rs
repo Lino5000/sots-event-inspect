@@ -1,6 +1,7 @@
 use inquire::{Select, InquireError};
 use strum::{ IntoEnumIterator, EnumIter };
-use walkdir::{ WalkDir, DirEntry };
+use walkdir::WalkDir;
+use bimap::BiBTreeMap;
 
 use crate::{
     data::{Event, NPC},
@@ -11,8 +12,11 @@ use crate::{
 use std::{
     collections::BTreeMap,
     error::Error,
+    fmt::Display, 
     fs::File,
-    path::PathBuf, fmt::Display, str::FromStr,
+    path::PathBuf, 
+    rc::Rc,
+    str::FromStr, 
 };
 
 #[derive(Debug, Clone)]
@@ -42,54 +46,6 @@ impl From<InquireError> for CommandError {
     fn from(value: InquireError) -> Self {
         value.to_string().into()
     }
-}
-
-fn parse_event_data(mut folder_path: PathBuf) -> Result<BTreeMap<String, Event>, Box<dyn Error>> {
-    folder_path.push("event_data.asset");
-    let file = File::open(folder_path)?;
-    let yaml: Field = serde_yaml::from_reader(file)?;
-    
-    let Field::Struct(data_map) = yaml else { return Err("Root isn't a map".into()); };
-    let ref_data_map = &data_map;
-    field_get!(let monobehaviour: Struct = ref_data_map.MonoBehaviour);
-    field_get!(let events: List = monobehaviour.data);
-
-    let vec = events.iter()
-        .map(|field| Event::try_from(field))
-        .collect::<Result<Vec<Event>, YamlError>>()?;
-
-    Ok(vec.into_iter()
-       .map(|e| (e.id.clone(), e))
-       .collect())
-}
-
-fn build_npc_map(folder_path: &PathBuf) -> Result<BTreeMap<String, NPC>, Box<dyn Error>> {
-    let mut map = BTreeMap::new();
-
-    let meta_files =
-        WalkDir::new(folder_path)
-        .min_depth(1)
-        .into_iter()
-        .filter_entry(|entry| {
-            entry.file_name().to_str().map_or(false, |name| name.ends_with(".meta"))
-        })
-        .flatten(); // Silently skip permission errors
-
-    for meta_file in meta_files {
-        let meta_path = meta_file.into_path();
-        let asset_path = meta_path.with_extension("");
-
-        let meta_yaml: Field = serde_yaml::from_reader(File::open(meta_path)?)?;
-        let Field::Struct(meta_map) = meta_yaml else { return Err("Root isn't a map".into()); };
-        let ref_meta_map = &meta_map;
-        field_get!(let guid: Str = ref_meta_map.guid);
-
-        if let Some(npc) = NPC::load_asset(asset_path)? {
-            map.insert(guid.clone(), npc);
-        }
-    }
-
-    Ok(map)
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, EnumIter)]
@@ -137,6 +93,7 @@ enum NPCSubCommand {
 
 impl NPCSubCommand {
     fn cycle(&self) -> Option<usize> {
+        use NPCSubCommand::*;
         match self {
             Deck0 => Some(0),
             Deck1 => Some(1),
@@ -188,16 +145,23 @@ impl FromStr for NPCSubCommand {
 pub struct App {
     event_map: BTreeMap<String, Event>,
     npc_map: BTreeMap<String, NPC>,
+    npc_guids: BiBTreeMap<String, String>, // (Guid, NPC id)
     running: bool,
 }
 
 impl App {
     pub fn new(args: Args) -> Result<Self, Box<dyn Error>> {
-        Ok(Self {
-            event_map: parse_event_data(args.path.clone())?,
-            npc_map: build_npc_map(&args.path)?,
+        let mut out = Self {
+            event_map: BTreeMap::new(),
+            npc_map: BTreeMap::new(),
+            npc_guids: BiBTreeMap::new(),
             running: true,
-        })
+        };
+
+        out.build_npc_maps(&args.path)?;
+        out.parse_event_data(args.path)?;
+        
+        Ok(out)
     }
 
     fn run_command(&mut self, cmd: Command) -> Result<(), CommandError> {
@@ -242,6 +206,53 @@ impl App {
                 .prompt()?;
             self.run_command(cmd)?;
         }
+        Ok(())
+    }
+
+    fn parse_event_data(&mut self, mut folder_path: PathBuf) -> Result<(), Box<dyn Error>> {
+        folder_path.push("event_data.asset");
+        let file = File::open(folder_path)?;
+        let yaml: Field = serde_yaml::from_reader(file)?;
+        
+        let Field::Struct(data_map) = yaml else { return Err("Root isn't a map".into()); };
+        let ref_data_map = &data_map;
+        field_get!(let monobehaviour: Struct = ref_data_map.MonoBehaviour);
+        field_get!(let events: List = monobehaviour.data);
+
+
+        self.event_map = events.iter()
+            .map(|field| Event::try_from(field))
+            .map(|r| r.map(|e| (e.id.clone(), e)))
+            .collect::<Result<_, YamlError>>()?;
+
+        Ok(())
+    }
+
+    fn build_npc_maps(&mut self, folder_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+        let meta_files =
+            WalkDir::new(folder_path)
+            .min_depth(1)
+            .into_iter()
+            .filter_entry(|entry| {
+                entry.file_name().to_str().map_or(false, |name| name.ends_with(".meta"))
+            })
+            .flatten(); // Silently skip permission errors
+
+        for meta_file in meta_files {
+            let meta_path = meta_file.into_path();
+            let asset_path = meta_path.with_extension("");
+
+            let meta_yaml: Field = serde_yaml::from_reader(File::open(meta_path)?)?;
+            let Field::Struct(meta_map) = meta_yaml else { return Err("Root isn't a map".into()); };
+            let ref_meta_map = &meta_map;
+            field_get!(let guid: Str = ref_meta_map.guid);
+
+            if let Some(npc) = NPC::load_asset(asset_path)? {
+                self.npc_guids.insert(guid.clone(), npc.id.clone());
+                self.npc_map.insert(guid.clone(), npc);
+            }
+        }
+
         Ok(())
     }
 }

@@ -318,6 +318,17 @@ impl PartialEq for NPC {
 }
 impl Eq for NPC {}
 
+impl PartialOrd for NPC {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for NPC {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+
 impl_tryfrom_field!{Struct for NPC:
     |field| {
         field_get!(let id: Str = field.id);
