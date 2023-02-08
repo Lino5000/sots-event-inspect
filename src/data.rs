@@ -1,7 +1,9 @@
 use std::{
-    collections::BTreeSet,
+    collections::{ BTreeMap, BTreeSet },
+    error::Error,
     fmt::Display,
-    ops::{ Deref, DerefMut },
+    fs::File,
+    ops::{ Deref, DerefMut }, path::PathBuf,
 };
 
 use crate::{
@@ -261,11 +263,9 @@ impl Display for Event {
         write_vec_sep(&self.sequence_lengths, ", ", f)?;
         writeln!(f, "\n\tdeck:")?;
         if let Some(deck) = &self.deck {
-            write!(f, "\t\tanchor: {}\n\t\t", deck.anchor)?;
-            write_vec_sep(&deck.cards, "\n\t\t", f)?;
-            writeln!(f, "")
+            writeln!(f, "{}", deck)
         } else {
-            writeln!(f, "Default for cycle; see character with npc guid `{}`", self.npc_guid)
+            writeln!(f, "\t\tDefault for cycle; see character with npc guid `{}`", self.npc_guid)
         }
     }
 }
@@ -292,5 +292,93 @@ impl_tryfrom_field!{Struct for Deck:
             },
             cards: deck,
         })
+    }
+}
+
+impl Display for Deck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\t\tanchor: {}\n\t\t", self.anchor)?;
+        write_vec_sep(&self.cards, "\n\t\t", f)
+    }
+}
+
+#[derive(Debug)]
+pub struct NPC {
+    pub id: String,
+    pub hand_size: u8,
+    pub prefers_doubles: bool,
+    pub mad_threshold: u8,
+    pub decks: [Deck; 6],
+}
+
+impl PartialEq for NPC {
+    fn eq(&self, other: &Self) -> bool {
+        self.id.eq(&other.id)
+    }
+}
+impl Eq for NPC {}
+
+impl_tryfrom_field!{Struct for NPC:
+    |field| {
+        field_get!(let id: Str = field.id);
+        field_get!(let hand_size: Uint = field.handSize);
+        field_get!(let doubles: Uint = field.prefersDoubles);
+        field_get!(let mad: Uint = field.mad);
+        field_get!(let deck0: Struct = field.deck0);
+        field_get!(let deck1: Struct = field.deck1);
+        field_get!(let deck2: Struct = field.deck2);
+        field_get!(let deck3: Struct = field.deck3);
+        field_get!(let deck4: Struct = field.deck4);
+        field_get!(let deck5: Struct = field.deck5);
+
+        Ok(Self {
+            id: id.to_owned(),
+            hand_size: *hand_size as u8,
+            prefers_doubles: *doubles != 0,
+            mad_threshold: *mad as u8,
+            decks: [
+                deck0.try_into()?,
+                deck1.try_into()?,
+                deck2.try_into()?,
+                deck3.try_into()?,
+                deck4.try_into()?,
+                deck5.try_into()?,
+            ]
+        })
+    }
+}
+
+impl NPC {
+    fn is_npc(map: &BTreeMap<String, Field>) -> bool {
+        map.contains_key("deck0")
+    }
+
+    pub fn load_asset(path: PathBuf) -> Result<Option<Self>, Box<dyn Error>> {
+        let yaml: Field = serde_yaml::from_reader(File::open(path)?)?;
+        let Field::Struct(data_map) = yaml else { return Err("Root isn't a map".into()); };
+        let ref_data_map = &data_map;
+        field_get!(let monobehaviour: Struct = ref_data_map.MonoBehaviour);
+        if NPC::is_npc(monobehaviour) {
+            let npc = monobehaviour.try_into()?;
+            Ok(Some(npc))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn print_details(&self) {
+        println!("{}:", self.id);
+        println!("\tHand Size: {}", self.hand_size);
+        println!("\tPrefers Doubles: {}", self.prefers_doubles);
+        println!("\tDiscordances to become mad: {}", self.mad_threshold);
+    }
+
+    pub fn print_deck(&self, cycle: usize) {
+        println!("\tDeck for cycle {}:", cycle);
+        println!("{}", self.decks[cycle]);
+    }
+
+    pub fn print_all_decks(&self) {
+        (0..=5).for_each(|i| NPC::print_deck(self, i));
     }
 }
