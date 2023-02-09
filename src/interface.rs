@@ -203,6 +203,26 @@ impl FromStr for NPCSubCommand {
     }
 }
 
+impl NPCSubCommand {
+    fn run(self, app_state: &mut AppState, npc: &NPC) -> Result<(), CommandError> {
+        use NPCSubCommand::*;
+        match self {
+            ViewEvents => {
+                todo!();
+            },
+            ViewDecks => { 
+                let sub_cmd = Select::new("Which cycle do you want? ", DeckSubCommand::iter().collect())
+                    .prompt()?;
+                sub_cmd.run(&npc)?;
+            },
+            Back => {
+                *app_state = AppState::Root;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 struct Event {
     npc_id: String,
@@ -285,10 +305,9 @@ impl App {
                         return Err("NPC Id was mapped to an invalid NPC GUID.".into());
                     };
                     npc.print_details();
-                    let sub_cmd = Select::new("Which cycle do you want? ", DeckSubCommand::iter().collect())
+                    let sub_cmd = Select::new("What would you like to know? ", NPCSubCommand::iter().collect())
                         .prompt()?;
-                    sub_cmd.run(&npc)?;
-                    self.state = Root;
+                    sub_cmd.run(&mut self.state, npc)?;
                 },
                 Quit => { unreachable!("Loop should end as soon as we enter the AppState::Quit state"); }
             }
