@@ -75,7 +75,18 @@ pub enum ConnectType {
 
 impl Display for ConnectType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self, f)
+        //std::fmt::Debug::fmt(&self, f)
+        use ConnectType::*;
+        write!(f, "{}", 
+            match self {
+                Circle => "○",
+                Triangle => "△",
+                Square => "□",
+                Diamond => "◊",
+                Dog => "🐾",
+                Spiral => "@",
+            }
+        )
     }
 }
 
@@ -98,18 +109,10 @@ impl DerefMut for Connector {
 
 impl Display for Connector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_empty() {
-            write!(f, "")
-        } else {
-            let mut iter = self.iter();
-            while let Some(c) = iter.next() {
-                write!(f, "{}", c)?;
-                if iter.len() != 0 {
-                    write!(f, ", ")?;
-                }
-            }
-            Ok(())
+        for c in self.iter() {
+            write!(f, "{}", c)?;
         }
+        Ok(())
     }
 }
 
@@ -149,7 +152,12 @@ pub struct Card {
 
 impl Display for Card {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{} | {} | {}", self.input, self.effect, self.output))
+        write!(f, "{} | {}", self.input, self.output)?;
+        if self.effect != Effect::None {
+            write!(f, " + {}", self.effect)
+        } else {
+            Ok(())
+        }
     }
 }
 
