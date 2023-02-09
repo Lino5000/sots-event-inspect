@@ -25,19 +25,23 @@
 echo "Building Windows"
 cargo build --release --target x86_64-pc-windows-gnu
 zip -j -9 release/windows.zip target/x86_64-pc-windows-gnu/release/sots-event-inspect.exe
+zip -j -9 release/windows.zip README.md
 
 echo "Building Windows (display_compat)"
 cargo build --release --target x86_64-pc-windows-gnu --features display_compat
 zip -j -9 release/windows-display-compat.zip target/x86_64-pc-windows-gnu/release/sots-event-inspect.exe
+zip -j -9 release/windows-display-compat.zip README.md
 
 # Linux
 echo "Building Linux"
 cargo build --release --target x86_64-unknown-linux-gnu
 zip -j -9 release/linux.zip target/x86_64-unknown-linux-gnu/release/sots-event-inspect
+zip -j -9 release/linux.zip README.md
 
 echo "Building Linux (display_compat)"
 cargo build --release --target x86_64-unknown-linux-gnu --features display_compat
 zip -j -9 release/linux-display-compat.zip target/x86_64-unknown-linux-gnu/release/sots-event-inspect
+zip -j -9 release/linux-display-compat.zip README.md
 
 # Save SHA256 checksums to a file
 echo "Saving checksums"
