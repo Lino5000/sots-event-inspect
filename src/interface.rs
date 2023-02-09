@@ -79,8 +79,28 @@ impl FromStr for Command {
     }
 }
 
+impl Command {
+    fn run(self, app: &mut App) -> Result<(), CommandError> {
+        use Command::*;
+        match self {
+            ViewEvent => {
+                let id: &str = Select::new("Event id: ", app.event_map.keys().collect())
+                    .prompt()?;
+                app.state = AppState::Event { id: id.to_owned() };
+            }
+            ViewNPC => {
+                let npc_id: &str = Select::new("NPC Id: ", app.npc_guids.right_values().collect())
+                    .prompt()?;
+                app.state = AppState::NPC { id: npc_id.to_owned() };
+            }
+            Quit => { app.state = AppState::Quit; }
+        };
+        Ok(())
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Clone, EnumIter)]
-enum NPCSubCommand {
+enum DeckSubCommand {
     Deck1,
     Deck2,
     Deck3,
@@ -90,9 +110,9 @@ enum NPCSubCommand {
     AllDecks,
 }
 
-impl NPCSubCommand {
+impl DeckSubCommand {
     fn cycle(&self) -> Option<usize> {
-        use NPCSubCommand::*;
+        use DeckSubCommand::*;
         match self {
             Deck1 => Some(1),
             Deck2 => Some(2),
@@ -103,11 +123,22 @@ impl NPCSubCommand {
             AllDecks => None,
         }
     }
+
+    fn run(self, npc: &NPC) -> Result<(), CommandError> {
+        if self == DeckSubCommand::AllDecks {
+            npc.print_all_decks();
+        } else if self == DeckSubCommand::FallbackDeck {
+            npc.print_fallback_deck();
+        } else {
+            npc.print_deck(self.cycle().expect("variant with specific cycle number"));
+        }
+        Ok(())
+    }
 }
 
-impl Display for NPCSubCommand {
+impl Display for DeckSubCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use NPCSubCommand::*;
+        use DeckSubCommand::*;
         write!(f, "{}", match *self {
             Deck1 => "1",
             Deck2 => "2",
@@ -120,11 +151,11 @@ impl Display for NPCSubCommand {
     }
 }
 
-impl FromStr for NPCSubCommand {
+impl FromStr for DeckSubCommand {
     type Err = CommandError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use NPCSubCommand::*;
+        use DeckSubCommand::*;
         Ok(
             match s.to_lowercase().as_str() {
                 "1" => Deck1,
@@ -137,6 +168,38 @@ impl FromStr for NPCSubCommand {
                 _ => { return Err("Unknown command".into()); }
             }
         )
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, EnumIter)]
+enum NPCSubCommand {
+    ViewEvents,
+    ViewDecks,
+    Back,
+}
+
+impl Display for NPCSubCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use NPCSubCommand::*;
+        write!(f, "{}", match self {
+            ViewEvents => "events",
+            ViewDecks => "decks",
+            Back => "back",
+        })
+    }
+}
+
+impl FromStr for NPCSubCommand {
+    type Err = CommandError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use NPCSubCommand::*;
+        Ok(match s.to_lowercase().as_str() {
+            "events" => ViewEvents,
+            "decks" => ViewDecks,
+            "back" => Back,
+            _ => { return Err(format!("Unknown command `{}`", s).into()); }
+        })
     }
 }
 
@@ -163,12 +226,20 @@ impl Display for Event {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum AppState {
+    Root,
+    Event { id: String },
+    NPC { id: String },
+    Quit,
+}
+
 #[derive(Debug)]
 pub struct App {
     event_map: BTreeMap<String, Event>,
     npc_map: BTreeMap<String, NPC>,
     npc_guids: BiBTreeMap<String, String>, // (Guid, NPC id)
-    running: bool,
+    state: AppState,
 }
 
 impl App {
@@ -177,7 +248,7 @@ impl App {
             event_map: BTreeMap::new(),
             npc_map: BTreeMap::new(),
             npc_guids: BiBTreeMap::new(),
-            running: true,
+            state: AppState::Root,
         };
 
         out.build_npc_maps(&args.path)?;
@@ -186,52 +257,41 @@ impl App {
         Ok(out)
     }
 
-    fn run_command(&mut self, cmd: Command) -> Result<(), CommandError> {
-        use Command::*;
-        match cmd {
-            ViewEvent => {
-                let id: &str = Select::new("Event id: ", self.event_map.keys().collect())
-                    .prompt()?;
-                let Some(event) = self.event_map.get(id) else {
-                    return Err("Select somehow returned an invalid event id.".into());
-                };
-                println!("{}", event);
-            }
-            ViewNPC => {
-                let npc_id: &str = Select::new("NPC Id: ", self.npc_guids.right_values().collect())
-                    .prompt()?;
-                let Some(guid) = self.npc_guids.get_by_right(npc_id) else {
-                    return Err("Select somehow returned an invalid npc id.".into());
-                };
-                let Some(npc) = self.npc_map.get(guid) else {
-                    return Err("Select somehow returned an invalid npc guid.".into());
-                };
-                npc.print_details();
-                let sub_cmd = Select::new("Which cycle do you want? ", NPCSubCommand::iter().collect())
-                    .prompt()?;
-                use NPCSubCommand::*;
-                if sub_cmd == AllDecks {
-                    npc.print_all_decks();
-                } else if sub_cmd == FallbackDeck {
-                    npc.print_fallback_deck();
-                } else {
-                    npc.print_deck(sub_cmd.cycle().expect("variant with specific cycle number"));
-                }
-            }
-            Quit => { self.running = false; }
-        };
-        Ok(())
-    }
-
     fn is_running(&self) -> bool {
-        self.running
+        self.state != AppState::Quit
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         while self.is_running() {
-            let cmd: Command = Select::new("", Command::iter().collect())
-                .prompt()?;
-            self.run_command(cmd)?;
+            use AppState::*;
+            match &self.state {
+                Root => {
+                    let cmd: Command = Select::new("", Command::iter().collect())
+                        .prompt()?;
+                    cmd.run(self)?;
+                },
+                Event { id } => {
+                    let Some(event) = self.event_map.get(id) else {
+                        return Err("Select somehow returned an invalid event id.".into());
+                    };
+                    println!("{}", event);
+                    self.state = Root;
+                },
+                NPC { id } => {
+                    let Some(guid) = self.npc_guids.get_by_right(id) else {
+                        return Err("Select somehow returned an invalid NPC Id.".into());
+                    };
+                    let Some(npc) = self.npc_map.get(guid) else {
+                        return Err("NPC Id was mapped to an invalid NPC GUID.".into());
+                    };
+                    npc.print_details();
+                    let sub_cmd = Select::new("Which cycle do you want? ", DeckSubCommand::iter().collect())
+                        .prompt()?;
+                    sub_cmd.run(&npc)?;
+                    self.state = Root;
+                },
+                Quit => { unreachable!("Loop should end as soon as we enter the AppState::Quit state"); }
+            }
         }
         Ok(())
     }
