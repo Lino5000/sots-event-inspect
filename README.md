@@ -5,12 +5,21 @@ files of the game [Signs of the Sojourner](https://www.echodoggames.com/).
 
 ## Usage
 
-```
-sots-event-inspect <PATH>
-```
-
 The `PATH` that you provide should be the path to the folder that contains all
 the `.asset` and `.asset.meta` files extracted from the game.
+
+Linux:
+```
+./sots-event-inspect <PATH>
+```
+
+Windows:
+```
+sots-event-inspect.exe <PATH>
+```
+**Important:** Make sure you run this command in `cmd.exe`, rather than
+PowerShell, as the latter seems to do something strange to the path that you
+provide that breaks the program.
 
 ### Display Issues
 
