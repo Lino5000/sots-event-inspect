@@ -389,7 +389,13 @@ impl NPC {
         println!("{}", self.decks[cycle]);
     }
 
+    pub fn print_fallback_deck(&self) {
+        println!("\tFallback deck (unexpected cycle value):");
+        println!("{}", self.decks[0]);
+    }
+
     pub fn print_all_decks(&self) {
-        (0..=5).for_each(|i| NPC::print_deck(self, i));
+        (1..=5).for_each(|i| NPC::print_deck(self, i));
+        self.print_fallback_deck();
     }
 }

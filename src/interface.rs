@@ -50,7 +50,7 @@ impl From<InquireError> for CommandError {
 #[derive(PartialEq, Eq, Debug, Clone, EnumIter)]
 enum Command {
     ViewEvent,
-    ViewNPCGuid,
+    ViewNPC,
     Quit,
 }
 
@@ -59,7 +59,7 @@ impl Display for Command {
         use Command::*;
         write!(f, "{}", match self {
             ViewEvent => "view event",
-            ViewNPCGuid => "view npc for guid",
+            ViewNPC => "view npc",
             Quit => "quit",
         })
     }
@@ -72,7 +72,7 @@ impl FromStr for Command {
         use Command::*;
         Ok(match s.to_lowercase().as_str() {
             "view event" => ViewEvent,
-            "view npc for guid" => ViewNPCGuid,
+            "view npc" => ViewNPC,
             "quit" => Quit,
             _ => { return Err(format!("Unknown command `{}`", s).into()); }
         })
@@ -81,12 +81,12 @@ impl FromStr for Command {
 
 #[derive(PartialEq, Eq, Debug, Clone, EnumIter)]
 enum NPCSubCommand {
-    Deck0,
     Deck1,
     Deck2,
     Deck3,
     Deck4,
     Deck5,
+    FallbackDeck,
     AllDecks,
 }
 
@@ -94,12 +94,12 @@ impl NPCSubCommand {
     fn cycle(&self) -> Option<usize> {
         use NPCSubCommand::*;
         match self {
-            Deck0 => Some(0),
             Deck1 => Some(1),
             Deck2 => Some(2),
             Deck3 => Some(3),
             Deck4 => Some(4),
             Deck5 => Some(5),
+            FallbackDeck => None,
             AllDecks => None,
         }
     }
@@ -109,12 +109,12 @@ impl Display for NPCSubCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use NPCSubCommand::*;
         write!(f, "{}", match *self {
-            Deck0 => "0",
             Deck1 => "1",
             Deck2 => "2",
             Deck3 => "3",
             Deck4 => "4",
             Deck5 => "5",
+            FallbackDeck => "fallback",
             AllDecks => "all",
         })
     }
@@ -127,12 +127,12 @@ impl FromStr for NPCSubCommand {
         use NPCSubCommand::*;
         Ok(
             match s.to_lowercase().as_str() {
-                "0" => Deck0,
                 "1" => Deck1,
                 "2" => Deck2,
                 "3" => Deck3,
                 "4" => Deck4,
                 "5" => Deck5,
+                "fallback" => FallbackDeck,
                 "all" => AllDecks,
                 _ => { return Err("Unknown command".into()); }
             }
@@ -197,9 +197,12 @@ impl App {
                 };
                 println!("{}", event);
             }
-            ViewNPCGuid => {
-                let guid: &str = Select::new("NPC Guid: ", self.npc_map.keys().collect())
+            ViewNPC => {
+                let npc_id: &str = Select::new("NPC Id: ", self.npc_guids.right_values().collect())
                     .prompt()?;
+                let Some(guid) = self.npc_guids.get_by_right(npc_id) else {
+                    return Err("Select somehow returned an invalid npc id.".into());
+                };
                 let Some(npc) = self.npc_map.get(guid) else {
                     return Err("Select somehow returned an invalid npc guid.".into());
                 };
@@ -209,8 +212,10 @@ impl App {
                 use NPCSubCommand::*;
                 if sub_cmd == AllDecks {
                     npc.print_all_decks();
+                } else if sub_cmd == FallbackDeck {
+                    npc.print_fallback_deck();
                 } else {
-                    npc.print_deck(sub_cmd.cycle().expect("Only AllDecks variant should return None"));
+                    npc.print_deck(sub_cmd.cycle().expect("variant with specific cycle number"));
                 }
             }
             Quit => { self.running = false; }
