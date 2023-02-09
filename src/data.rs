@@ -74,6 +74,7 @@ pub enum ConnectType {
 }
 
 impl Display for ConnectType {
+    #[cfg(not(feature = "display_compat"))]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         //std::fmt::Debug::fmt(&self, f)
         use ConnectType::*;
@@ -84,6 +85,22 @@ impl Display for ConnectType {
                 Square => "□",
                 Diamond => "◊",
                 Dog => "🐾",
+                Spiral => "@",
+            }
+        )
+    }
+
+    #[cfg(feature = "display_compat")]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        //std::fmt::Debug::fmt(&self, f)
+        use ConnectType::*;
+        write!(f, "{}", 
+            match self {
+                Circle => "C",
+                Triangle => "T",
+                Square => "S",
+                Diamond => "D",
+                Dog => "P",
                 Spiral => "@",
             }
         )
