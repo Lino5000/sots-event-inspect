@@ -403,7 +403,7 @@ impl NPC {
     }
 
     pub fn print_details(&self) {
-        println!("{}:", self.id);
+        println!("NPC - {}:", self.id);
         println!("\tHand Size: {}", self.hand_size);
         println!("\tPrefers Doubles: {}", self.prefers_doubles);
         println!("\tDiscordances to become mad: {}", self.mad_threshold);

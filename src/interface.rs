@@ -1,4 +1,4 @@
-use inquire::{Select, InquireError};
+use inquire::{Select, InquireError, Confirm};
 use strum::{ IntoEnumIterator, EnumIter };
 use walkdir::WalkDir;
 use bimap::BiBTreeMap;
@@ -10,7 +10,7 @@ use crate::{
 };
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     error::Error,
     fmt::Display, 
     fs::File,
@@ -49,8 +49,8 @@ impl From<InquireError> for CommandError {
 
 #[derive(PartialEq, Eq, Debug, Clone, EnumIter)]
 enum Command {
-    ViewEvent,
     ViewNPC,
+    ViewEvent,
     Quit,
 }
 
@@ -84,12 +84,12 @@ impl Command {
         use Command::*;
         match self {
             ViewEvent => {
-                let id: &str = Select::new("Event id: ", app.event_map.keys().collect())
+                let id: &str = Select::new("Event id:", app.event_map.keys().collect())
                     .prompt()?;
                 app.state = AppState::Event { id: id.to_owned() };
             }
             ViewNPC => {
-                let npc_id: &str = Select::new("NPC Id: ", app.npc_guids.right_values().collect())
+                let npc_id: &str = Select::new("NPC Id:", app.npc_guids.right_values().collect())
                     .prompt()?;
                 app.state = AppState::NPC { id: npc_id.to_owned() };
             }
@@ -106,8 +106,8 @@ enum DeckSubCommand {
     Deck3,
     Deck4,
     Deck5,
-    FallbackDeck,
     AllDecks,
+    FallbackDeck,
 }
 
 impl DeckSubCommand {
@@ -208,10 +208,10 @@ impl NPCSubCommand {
         use NPCSubCommand::*;
         match self {
             ViewEvents => {
-                todo!();
+                *app_state = AppState::NPCEvents { npc_id: npc.id.clone() };
             },
             ViewDecks => { 
-                let sub_cmd = Select::new("Which cycle do you want? ", DeckSubCommand::iter().collect())
+                let sub_cmd = Select::new("Which cycle do you want the deck for?", DeckSubCommand::iter().collect())
                     .prompt()?;
                 sub_cmd.run(&npc)?;
             },
@@ -251,6 +251,7 @@ enum AppState {
     Root,
     Event { id: String },
     NPC { id: String },
+    NPCEvents { npc_id: String },
     Quit,
 }
 
@@ -259,6 +260,7 @@ pub struct App {
     event_map: BTreeMap<String, Event>,
     npc_map: BTreeMap<String, NPC>,
     npc_guids: BiBTreeMap<String, String>, // (Guid, NPC id)
+    npc_events: BTreeMap<String, BTreeSet<String>>, // (NPC id, Set of Event ids)
     state: AppState,
 }
 
@@ -268,6 +270,7 @@ impl App {
             event_map: BTreeMap::new(),
             npc_map: BTreeMap::new(),
             npc_guids: BiBTreeMap::new(),
+            npc_events: BTreeMap::new(),
             state: AppState::Root,
         };
 
@@ -286,7 +289,7 @@ impl App {
             use AppState::*;
             match &self.state {
                 Root => {
-                    let cmd: Command = Select::new("", Command::iter().collect())
+                    let cmd: Command = Select::new("What would you like to do?", Command::iter().collect())
                         .prompt()?;
                     cmd.run(self)?;
                 },
@@ -294,7 +297,7 @@ impl App {
                     let Some(event) = self.event_map.get(id) else {
                         return Err("Select somehow returned an invalid event id.".into());
                     };
-                    println!("{}", event);
+                    println!("Event - {}", event);
                     self.state = Root;
                 },
                 NPC { id } => {
@@ -305,9 +308,33 @@ impl App {
                         return Err("NPC Id was mapped to an invalid NPC GUID.".into());
                     };
                     npc.print_details();
-                    let sub_cmd = Select::new("What would you like to know? ", NPCSubCommand::iter().collect())
+                    let sub_cmd = Select::new(&format!("What would you like to know about {}?", npc.id), NPCSubCommand::iter().collect())
                         .prompt()?;
                     sub_cmd.run(&mut self.state, npc)?;
+                },
+                NPCEvents { npc_id } => {
+                    let Some(event_ids) = self.npc_events.get(npc_id) else {
+                        return Err("Somehow ended up with an invalid NPC Id.".into());
+                    };
+                    println!("{} has the following events:", npc_id);
+                    event_ids.iter().for_each(|e| {
+                        println!("\t{}", e);
+                    });
+                    let inspect = Confirm::new("Would you like to inspect one of these events?").prompt()?;
+                    if inspect {
+                        let mut options = event_ids.clone();
+                        options.insert("cancel".to_owned());
+                        let event_id = Select::new("Which event would you like to inspect?", options.iter().collect())
+                            .prompt()?;
+                        if let Some(event) = self.event_map.get(event_id) {
+                            println!("Event - {}", event);
+                        } else if event_id == "cancel" {
+                            println!("Cancelled.");
+                        } else {
+                            return Err("Select somehow returned an invalid event id.".into());
+                        };
+                    }
+                    self.state = NPC { id: npc_id.clone() };
                 },
                 Quit => { unreachable!("Loop should end as soon as we enter the AppState::Quit state"); }
             }
@@ -330,6 +357,13 @@ impl App {
             .map(|field| {
                 let raw = RawEvent::try_from(field)?;
                 if let Some(npc_id) = self.npc_guids.get_by_left(&raw.npc_guid) {
+                    // Insert to relevant npc_events set
+                    let Some(event_set) = self.npc_events.get_mut(npc_id) else {
+                        return Err(format!("NPC {} somehow wasn't added to the npc_events map", npc_id).into());
+                    };
+                    event_set.insert(raw.id.clone());
+
+                    // Create the actual Event struct for the event_map
                     Ok((raw.id.clone(), Event {
                         npc_id: npc_id.clone(),
                         event: raw
@@ -364,6 +398,7 @@ impl App {
 
             if let Some(npc) = NPC::load_asset(asset_path)? {
                 self.npc_guids.insert(guid.clone(), npc.id.clone());
+                self.npc_events.insert(npc.id.clone(), BTreeSet::new());
                 self.npc_map.insert(guid.clone(), npc);
             }
         }
